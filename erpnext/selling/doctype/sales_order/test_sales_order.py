@@ -109,6 +109,13 @@ class TestSalesOrder(AccountsTestMixin, FrappeTestCase):
 		so.save()
 		self.assertEqual(so.items[0].qty, 1)
 
+	def test_sales_order_zero_qty(self):
+		po = make_sales_order(qty=0, do_not_save=True)
+
+		with change_settings("Selling Settings", {"allow_zero_qty_in_sales_order": 1}):
+			po.save()
+			self.assertEqual(po.items[0].qty, 0)
+
 	def test_make_material_request(self):
 		so = make_sales_order(do_not_submit=True)
 
@@ -170,6 +177,10 @@ class TestSalesOrder(AccountsTestMixin, FrappeTestCase):
 		so.load_from_db()
 		self.assertEqual(so.per_billed, 0)
 
+	@change_settings(
+		"Accounts Settings",
+		{"add_taxes_from_item_tax_template": 0, "add_taxes_from_taxes_and_charges_template": 1},
+	)
 	def test_make_sales_invoice_with_terms(self):
 		so = make_sales_order(do_not_submit=True)
 
@@ -1821,6 +1832,10 @@ class TestSalesOrder(AccountsTestMixin, FrappeTestCase):
 		self.assertEqual(so.items[0].work_order_qty, wo.produced_qty)
 		self.assertEqual(mr.status, "Manufactured")
 
+	@change_settings(
+		"Accounts Settings",
+		{"add_taxes_from_item_tax_template": 0, "add_taxes_from_taxes_and_charges_template": 0},
+	)
 	def test_sales_order_with_shipping_rule(self):
 		from erpnext.accounts.doctype.shipping_rule.test_shipping_rule import create_shipping_rule
 
@@ -1846,6 +1861,10 @@ class TestSalesOrder(AccountsTestMixin, FrappeTestCase):
 		sales_order.save()
 		self.assertEqual(sales_order.taxes[0].tax_amount, 0)
 
+	@change_settings(
+		"Accounts Settings",
+		{"add_taxes_from_item_tax_template": 0, "add_taxes_from_taxes_and_charges_template": 1},
+	)
 	def test_sales_order_partial_advance_payment(self):
 		from erpnext.accounts.doctype.payment_entry.test_payment_entry import (
 			create_payment_entry,
@@ -2305,6 +2324,77 @@ class TestSalesOrder(AccountsTestMixin, FrappeTestCase):
 		po.items[0].rate = 100
 		po.submit()
 		self.assertEqual(po.taxes[0].tax_amount, 2)
+
+	@change_settings("Selling Settings", {"allow_zero_qty_in_sales_order": 1})
+	def test_deliver_zero_qty_purchase_order(self):
+		"""
+		Test the flow of a Unit Price SO and DN creation against it until completion.
+		Flow:
+		SO Qty 0 -> Deliver +5 -> Update SO Qty +10 -> Deliver +5 -> SO is 100% delivered
+		"""
+		so = make_sales_order(qty=0)
+		dn = make_delivery_note(so.name)
+
+		self.assertEqual(dn.items[0].qty, 0)
+		dn.items[0].qty = 5
+		dn.submit()
+
+		# Test SO impact after DN
+		so.reload()
+		self.assertEqual(so.items[0].delivered_qty, 5)
+		self.assertFalse(so.per_delivered)
+		self.assertEqual(so.status, "To Deliver and Bill")
+
+		# Update SO Qty to final qty
+		first_item_of_so = so.items[0]
+		trans_item = json.dumps(
+			[
+				{
+					"item_code": first_item_of_so.item_code,
+					"rate": first_item_of_so.rate,
+					"qty": 10,
+					"docname": first_item_of_so.name,
+				}
+			]
+		)
+		update_child_qty_rate("Sales Order", trans_item, so.name)
+
+		# Test: DN maps pending qty from SO
+		dn2 = make_delivery_note(so.name)
+
+		so.reload()
+		self.assertEqual(so.items[0].qty, 10)
+		self.assertEqual(dn2.items[0].qty, 5)
+
+		dn2.submit()
+
+		so.reload()
+		self.assertEqual(so.items[0].delivered_qty, 10)
+		self.assertEqual(so.per_delivered, 100.0)
+		self.assertEqual(so.status, "To Bill")
+
+	@change_settings("Selling Settings", {"allow_zero_qty_in_sales_order": 1})
+	def test_bill_zero_qty_sales_order(self):
+		so = make_sales_order(qty=0)
+
+		self.assertEqual(so.grand_total, 0)
+		self.assertFalse(so.per_billed)
+		self.assertEqual(so.items[0].qty, 0)
+		self.assertEqual(so.items[0].rate, 100)
+
+		si = make_sales_invoice(so.name)
+		self.assertEqual(si.items[0].qty, 0)
+		self.assertEqual(si.items[0].rate, 100)
+
+		si.items[0].qty = 5
+		si.submit()
+
+		so.reload()
+		self.assertEqual(so.items[0].amount, 0)
+		self.assertEqual(so.items[0].billed_amt, si.grand_total)
+		# SO still has qty 0, so billed % should be unset
+		self.assertFalse(so.per_billed)
+		self.assertEqual(so.status, "To Deliver and Bill")
 
 
 def automatically_fetch_payment_terms(enable=1):

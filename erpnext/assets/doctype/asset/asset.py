@@ -93,7 +93,7 @@ class Asset(AccountsController):
 		opening_number_of_booked_depreciations: DF.Int
 		policy_number: DF.Data | None
 		purchase_amount: DF.Currency
-		purchase_date: DF.Date | None
+		purchase_date: DF.Date
 		purchase_invoice: DF.Link | None
 		purchase_invoice_item: DF.Data | None
 		purchase_receipt: DF.Link | None
@@ -1215,6 +1215,10 @@ def update_existing_asset(asset, remaining_qty, new_asset_name):
 	opening_accumulated_depreciation = flt(
 		(asset.opening_accumulated_depreciation * remaining_qty) / asset.asset_quantity
 	)
+	value_after_depreciation = flt(
+		(asset.value_after_depreciation * remaining_qty) / asset.asset_quantity,
+		asset.precision("gross_purchase_amount"),
+	)
 
 	frappe.db.set_value(
 		"Asset",
@@ -1222,6 +1226,7 @@ def update_existing_asset(asset, remaining_qty, new_asset_name):
 		{
 			"opening_accumulated_depreciation": opening_accumulated_depreciation,
 			"gross_purchase_amount": remaining_gross_purchase_amount,
+			"value_after_depreciation": value_after_depreciation,
 			"asset_quantity": remaining_qty,
 		},
 	)
@@ -1283,6 +1288,10 @@ def create_new_asset_after_split(asset, split_qty):
 	new_asset.opening_accumulated_depreciation = opening_accumulated_depreciation
 	new_asset.asset_quantity = split_qty
 	new_asset.split_from = asset.name
+	new_asset.value_after_depreciation = flt(
+		(asset.value_after_depreciation * split_qty) / asset.asset_quantity,
+		asset.precision("gross_purchase_amount"),
+	)
 
 	for row in new_asset.get("finance_books"):
 		row.value_after_depreciation = flt((row.value_after_depreciation * split_qty) / asset.asset_quantity)

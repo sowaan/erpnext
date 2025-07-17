@@ -5,7 +5,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt, formatdate, get_link_to_form, getdate
+from frappe.utils import cstr, flt, formatdate, get_link_to_form, getdate
 
 from erpnext.accounts.doctype.accounting_dimension.accounting_dimension import (
 	get_checks_for_pl_and_bs_accounts,
@@ -188,15 +188,34 @@ class AssetValueAdjustment(Document):
 				get_link_to_form(self.get("doctype"), self.get("name")),
 			)
 
+		difference_amount = self.difference_amount if self.docstatus == 1 else -1 * self.difference_amount
+		if asset.calculate_depreciation:
+			for row in asset.finance_books:
+				if cstr(row.finance_book) == cstr(self.finance_book):
+					salvage_value_adjustment = (
+						self.get_adjusted_salvage_value_amount(row, difference_amount) or 0
+					)
+					row.expected_value_after_useful_life += salvage_value_adjustment
+					row.value_after_depreciation += flt(difference_amount)
+					row.db_update()
+
+		asset.db_update()
+
 		make_new_active_asset_depr_schedules_and_cancel_current_ones(
 			asset,
 			notes,
 			value_after_depreciation=asset_value,
 			ignore_booked_entry=True,
-			difference_amount=self.difference_amount,
+			difference_amount=difference_amount,
 		)
 		asset.flags.ignore_validate_update_after_submit = True
 		asset.save()
+		asset.set_status()
+
+	def get_adjusted_salvage_value_amount(self, row, difference_amount):
+		if row.expected_value_after_useful_life:
+			salvage_value_adjustment = (difference_amount * row.salvage_value_percentage) / 100
+			return flt(salvage_value_adjustment if self.docstatus == 1 else -1 * salvage_value_adjustment)
 
 
 @frappe.whitelist()
