@@ -112,6 +112,7 @@ class SerialBatchBundle:
 				"company": self.company,
 				"is_rejected": self.is_rejected_entry(),
 				"make_bundle_from_sle": 1,
+				"sle": self.sle,
 			}
 		).make_serial_and_batch_bundle()
 
@@ -359,7 +360,7 @@ class SerialBatchBundle:
 		self.update_serial_no_status_warehouse(self.sle, serial_nos)
 
 	def update_serial_no_status_warehouse(self, sle, serial_nos):
-		warehouse = self.warehouse if sle.actual_qty > 0 else None
+		warehouse = sle.warehouse if sle.actual_qty > 0 else None
 
 		if isinstance(serial_nos, str):
 			serial_nos = [serial_nos]
@@ -723,6 +724,7 @@ class BatchNoValuation(DeprecatedBatchNoValuation):
 				& (parent.is_cancelled == 0)
 				& (parent.type_of_transaction.isin(["Inward", "Outward"]))
 			)
+			.for_update()
 			.groupby(child.batch_no)
 		)
 
@@ -1003,6 +1005,14 @@ class SerialBatchCreation:
 
 		if not hasattr(self, "do_not_submit") or not self.do_not_submit:
 			doc.flags.ignore_voucher_validation = True
+			if self.get("sle"):
+				doc.flags.ignore_validate = True
+				doc.save()
+				self.sle.db_set("serial_and_batch_bundle", doc.name, update_modified=False)
+
+			if doc.flags.ignore_validate:
+				doc.flags.ignore_validate = False
+
 			doc.submit()
 		else:
 			doc.save()

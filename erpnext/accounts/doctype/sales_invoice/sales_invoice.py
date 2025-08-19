@@ -1206,7 +1206,6 @@ class SalesInvoice(SellingController):
 
 				self.make_exchange_gain_loss_journal()
 			elif self.docstatus == 2:
-				cancel_exchange_gain_loss_journal(frappe._dict(doctype=self.doctype, name=self.name))
 				make_reverse_gl_entries(voucher_type=self.doctype, voucher_no=self.name)
 
 			if update_outstanding == "No":
@@ -1370,8 +1369,9 @@ class SalesInvoice(SellingController):
 						)
 						asset.db_set("disposal_date", None)
 						add_asset_activity(asset.name, _("Asset returned"))
+						asset_status = asset.get_status()
 
-						if asset.calculate_depreciation:
+						if asset.calculate_depreciation and not asset_status == "Fully Depreciated":
 							posting_date = (
 								frappe.db.get_value("Sales Invoice", self.return_against, "posting_date")
 								if self.is_return
