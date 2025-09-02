@@ -169,7 +169,7 @@ class PricingRule(Document):
 
 		tocheck = frappe.scrub(self.get("applicable_for", ""))
 		if tocheck and not self.get(tocheck):
-			throw(_("{0} is required").format(self.meta.get_label(tocheck)), frappe.MandatoryError)
+			throw(_("{0} is required").format(_(self.meta.get_label(tocheck))), frappe.MandatoryError)
 
 		if self.apply_rule_on_other:
 			o_field = "other_" + frappe.scrub(self.apply_rule_on_other)
@@ -454,8 +454,7 @@ def get_pricing_rule_for_item(args, doc=None, for_validate=False):
 
 			if pricing_rule.coupon_code_based == 1:
 				if not args.coupon_code:
-					return item_details
-
+					continue
 				coupon_code = frappe.db.get_value(
 					doctype="Coupon Code", filters={"pricing_rule": pricing_rule.name}, fieldname="name"
 				)

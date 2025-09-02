@@ -1,8 +1,8 @@
 erpnext.PointOfSale.PastOrderSummary = class {
-	constructor({ wrapper, events, pos_profile }) {
+	constructor({ wrapper, settings, events }) {
 		this.wrapper = wrapper;
 		this.events = events;
-		this.pos_profile = pos_profile;
+		this.print_receipt_on_order_complete = settings.print_receipt_on_order_complete;
 
 		this.init_component();
 	}
@@ -73,14 +73,18 @@ erpnext.PointOfSale.PastOrderSummary = class {
 	get_upper_section_html(doc) {
 		const { status } = doc;
 		let indicator_color = "";
+		const is_customer_naming_by_customer_name = frappe.sys_defaults.cust_master_name !== "Customer Name";
 
 		["Paid", "Consolidated"].includes(status) && (indicator_color = "green");
 		status === "Draft" && (indicator_color = "red");
 		status === "Return" && (indicator_color = "grey");
 
 		return `<div class="left-section">
-					<div class="customer-name">${doc.customer}</div>
-					<div class="customer-email">${this.customer_email}</div>
+					<div class="customer-section">
+						<div class="customer-name">${doc.customer_name}</div>
+						${is_customer_naming_by_customer_name ? `<div class="customer-code">${doc.customer}</div>` : ""}
+						<div class="customer-email">${this.customer_email}</div>
+					</div>
 					<div class="cashier">${__("Sold by")}: ${doc.owner}</div>
 				</div>
 				<div class="right-section">
@@ -357,8 +361,8 @@ erpnext.PointOfSale.PastOrderSummary = class {
 
 		this.add_summary_btns(condition_btns_map);
 
-		if (after_submission) {
-			this.print_receipt_on_order_complete();
+		if (after_submission && this.print_receipt_on_order_complete) {
+			this.print_receipt();
 		}
 	}
 
@@ -425,17 +429,5 @@ erpnext.PointOfSale.PastOrderSummary = class {
 
 	toggle_component(show) {
 		show ? this.$component.css("display", "flex") : this.$component.css("display", "none");
-	}
-
-	async print_receipt_on_order_complete() {
-		const res = await frappe.db.get_value(
-			"POS Profile",
-			this.pos_profile,
-			"print_receipt_on_order_complete"
-		);
-
-		if (res.message.print_receipt_on_order_complete) {
-			this.print_receipt();
-		}
 	}
 };

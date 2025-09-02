@@ -263,6 +263,10 @@ $.extend(erpnext.utils, {
 								fieldname: dimension["fieldname"],
 								label: __(dimension["doctype"]),
 								fieldtype: "MultiSelectList",
+								depends_on:
+									report_name === "Stock Balance"
+										? "eval:doc.show_dimension_wise_stock === 1"
+										: "",
 								get_data: function (txt) {
 									return frappe.db.get_link_options(dimension["doctype"], txt);
 								},
@@ -444,6 +448,16 @@ $.extend(erpnext.utils, {
 			},
 		});
 		return fiscal_year;
+	},
+
+	set_letter_head: function (frm) {
+		if (frm.fields_dict.letter_head) {
+			frappe.db.get_value("Company", frm.doc.company, "default_letter_head").then((res) => {
+				if (res.message?.default_letter_head) {
+					frm.set_value("letter_head", res.message.default_letter_head);
+				}
+			});
+		}
 	},
 });
 
@@ -692,7 +706,7 @@ erpnext.utils.update_child_items = function (opts) {
 					},
 					callback: function (r) {
 						if (r.message) {
-							const { qty, price_list_rate: rate, uom, conversion_factor } = r.message;
+							const { qty, price_list_rate: rate, uom, conversion_factor, bom_no } = r.message;
 
 							const row = dialog.fields_dict.trans_items.df.data.find(
 								(doc) => doc.idx == me.doc.idx
@@ -703,6 +717,7 @@ erpnext.utils.update_child_items = function (opts) {
 									uom: me.doc.uom || uom,
 									qty: me.doc.qty || qty,
 									rate: me.doc.rate || rate,
+									bom_no: bom_no,
 								});
 								dialog.fields_dict.trans_items.grid.refresh();
 							}
@@ -999,7 +1014,7 @@ erpnext.utils.map_current_doc = function (opts) {
 
 				if (
 					opts.allow_child_item_selection ||
-					["Purchase Receipt", "Delivery Note"].includes(opts.source_doctype)
+					["Purchase Receipt", "Delivery Note", "Pick List"].includes(opts.source_doctype)
 				) {
 					// args contains filtered child docnames
 					opts.args = args;
@@ -1198,9 +1213,9 @@ function set_time_to_resolve_and_response(frm, apply_sla_for_resolution) {
 	if (apply_sla_for_resolution) {
 		let time_to_resolve;
 		if (!frm.doc.resolution_date) {
-			time_to_resolve = get_time_left(frm.doc.resolution_by, frm.doc.agreement_status);
+			time_to_resolve = get_time_left(frm.doc.sla_resolution_by, frm.doc.agreement_status);
 		} else {
-			time_to_resolve = get_status(frm.doc.resolution_by, frm.doc.resolution_date);
+			time_to_resolve = get_status(frm.doc.sla_resolution_by, frm.doc.sla_resolution_date);
 		}
 
 		alert += `

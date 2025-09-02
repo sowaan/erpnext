@@ -575,10 +575,22 @@ class TestJournalEntry(unittest.TestCase):
 			order_by="account",
 		)
 		expected = [
-			{"account": "_Test Bank - _TC", "transaction_exchange_rate": 1.0},
+			{"account": "_Test Bank - _TC", "transaction_exchange_rate": 85.0},
 			{"account": "_Test Receivable USD - _TC", "transaction_exchange_rate": 85.0},
 		]
 		self.assertEqual(expected, actual)
+
+	def test_pay_to_recd_from(self):
+		jv = make_journal_entry("_Test Cash - _TC", "_Test Bank - _TC", 100, save=False)
+		jv.pay_to_recd_from = "_Test Receiver"
+		jv.save()
+		self.assertEqual(jv.pay_to_recd_from, "_Test Receiver")
+
+		jv.pay_to_recd_from = "_Test Receiver 2"
+		jv.save()
+		jv.submit()
+
+		self.assertEqual(jv.pay_to_recd_from, "_Test Receiver 2")
 
 
 def make_journal_entry(
@@ -591,13 +603,14 @@ def make_journal_entry(
 	save=True,
 	submit=False,
 	project=None,
+	company=None,
 ):
 	if not cost_center:
 		cost_center = "_Test Cost Center - _TC"
 
 	jv = frappe.new_doc("Journal Entry")
 	jv.posting_date = posting_date or nowdate()
-	jv.company = "_Test Company"
+	jv.company = company or "_Test Company"
 	jv.user_remark = "test"
 	jv.multi_currency = 1
 	jv.set(

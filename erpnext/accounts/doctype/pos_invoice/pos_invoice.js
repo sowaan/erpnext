@@ -14,6 +14,7 @@ erpnext.selling.POSInvoiceController = class POSInvoiceController extends erpnex
 	}
 
 	company() {
+		erpnext.utils.set_letter_head(this.frm);
 		erpnext.accounts.dimensions.update_dimension(this.frm, this.frm.doctype);
 		this.frm.set_value("set_warehouse", "");
 		this.frm.set_value("taxes_and_charges", "");
@@ -320,6 +321,18 @@ frappe.ui.form.on("POS Invoice", {
 							});
 					}, 60000);
 				});
+		});
+	},
+});
+
+frappe.ui.form.on("Sales Invoice Payment", {
+	mode_of_payment: function (frm) {
+		frappe.call({
+			doc: frm.doc,
+			method: "set_account_for_mode_of_payment",
+			callback: function (r) {
+				refresh_field("payments");
+			},
 		});
 	},
 });

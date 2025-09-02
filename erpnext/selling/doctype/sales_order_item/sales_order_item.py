@@ -32,7 +32,7 @@ class SalesOrderItem(Document):
 		brand: DF.Link | None
 		company_total_stock: DF.Float
 		conversion_factor: DF.Float
-		cost_center: DF.Link
+		cost_center: DF.Link | None
 		customer_item_code: DF.Data | None
 		delivered_by_supplier: DF.Check
 		delivered_qty: DF.Float
@@ -40,6 +40,7 @@ class SalesOrderItem(Document):
 		description: DF.TextEditor | None
 		discount_amount: DF.Currency
 		discount_percentage: DF.Percent
+		distributed_discount_amount: DF.Currency
 		ensure_delivery_based_on_produced_serial_no: DF.Check
 		grant_commission: DF.Check
 		gross_profit: DF.Currency

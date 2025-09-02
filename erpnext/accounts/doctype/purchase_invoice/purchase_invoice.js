@@ -35,7 +35,10 @@ erpnext.accounts.PurchaseInvoice = class PurchaseInvoice extends erpnext.buying.
 		this.frm.set_query("expense_account", "items", function () {
 			return {
 				query: "erpnext.controllers.queries.get_expense_account",
-				filters: { company: doc.company },
+				filters: {
+					company: doc.company,
+					disabled: 0,
+				},
 			};
 		});
 	}
@@ -425,6 +428,8 @@ erpnext.accounts.PurchaseInvoice = class PurchaseInvoice extends erpnext.buying.
 				this.frm.set_value("is_paid", 0);
 				frappe.msgprint(__("Please specify Company to proceed"));
 			}
+		} else {
+			this.frm.set_value("paid_amount", 0);
 		}
 		this.calculate_outstanding_amount();
 		this.frm.refresh_fields();

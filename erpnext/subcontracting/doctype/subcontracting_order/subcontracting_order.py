@@ -119,12 +119,12 @@ class SubcontractingOrder(SubcontractingController):
 	def on_submit(self):
 		self.update_prevdoc_status()
 		self.update_status()
-		self.update_sco_qty_in_po()
+		self.update_subcontracted_quantity_in_po()
 
 	def on_cancel(self):
 		self.update_prevdoc_status()
 		self.update_status()
-		self.update_sco_qty_in_po(cancel=True)
+		self.update_subcontracted_quantity_in_po(cancel=True)
 
 	def validate_purchase_order_for_subcontracting(self):
 		if self.purchase_order:
@@ -162,7 +162,7 @@ class SubcontractingOrder(SubcontractingController):
 			item = next(
 				item for item in self.items if item.purchase_order_item == service_item.purchase_order_item
 			)
-			service_item.qty = item.qty * item.sc_conversion_factor
+			service_item.qty = item.qty * item.subcontracting_conversion_factor
 			service_item.fg_item_qty = item.qty
 			service_item.amount = service_item.qty * service_item.rate
 
@@ -236,8 +236,11 @@ class SubcontractingOrder(SubcontractingController):
 
 		return flt(query[0][0]) if query else 0
 
-	def update_reserved_qty_for_subcontracting(self):
+	def update_reserved_qty_for_subcontracting(self, sco_item_rows=None):
 		for item in self.supplied_items:
+			if sco_item_rows and item.reference_name not in sco_item_rows:
+				continue
+
 			if item.rm_item_code:
 				stock_bin = get_bin(item.rm_item_code, item.reserve_warehouse)
 				stock_bin.update_reserved_qty_for_sub_contracting()
@@ -250,14 +253,16 @@ class SubcontractingOrder(SubcontractingController):
 				item = frappe.get_doc("Item", si.fg_item)
 
 				po_item = frappe.get_doc("Purchase Order Item", si.purchase_order_item)
-				available_qty = po_item.qty - po_item.sco_qty
+				available_qty = po_item.qty - po_item.subcontracted_quantity
 
 				if available_qty == 0:
 					continue
 
 				si.qty = available_qty
 				conversion_factor = po_item.qty / po_item.fg_item_qty
-				si.fg_item_qty = available_qty / conversion_factor
+				si.fg_item_qty = flt(
+					available_qty / conversion_factor, frappe.get_precision("Purchase Order Item", "qty")
+				)
 				si.amount = available_qty * si.rate
 
 				bom = (
@@ -276,7 +281,7 @@ class SubcontractingOrder(SubcontractingController):
 						"schedule_date": self.schedule_date,
 						"description": item.description,
 						"qty": si.fg_item_qty,
-						"sc_conversion_factor": conversion_factor,
+						"subcontracting_conversion_factor": conversion_factor,
 						"stock_uom": item.stock_uom,
 						"bom": bom,
 						"purchase_order_item": si.purchase_order_item,
@@ -297,7 +302,7 @@ class SubcontractingOrder(SubcontractingController):
 
 		self.set_missing_values()
 
-	def update_status(self, status=None, update_modified=True):
+	def update_status(self, status=None, update_modified=True, update_bin=True):
 		if self.status == "Closed" and self.status != status:
 			check_on_hold_or_closed_status("Purchase Order", self.purchase_order)
 
@@ -327,13 +332,18 @@ class SubcontractingOrder(SubcontractingController):
 			self.db_set("status", status, update_modified=update_modified)
 
 		self.update_requested_qty()
-		self.update_ordered_qty_for_subcontracting()
-		self.update_reserved_qty_for_subcontracting()
+		if update_bin:
+			self.update_ordered_qty_for_subcontracting()
+			self.update_reserved_qty_for_subcontracting()
 
-	def update_sco_qty_in_po(self, cancel=False):
+	def update_subcontracted_quantity_in_po(self, cancel=False):
 		for service_item in self.service_items:
 			doc = frappe.get_doc("Purchase Order Item", service_item.purchase_order_item)
-			doc.sco_qty = (doc.sco_qty + service_item.qty) if not cancel else (doc.sco_qty - service_item.qty)
+			doc.subcontracted_quantity = (
+				(doc.subcontracted_quantity + service_item.qty)
+				if not cancel
+				else (doc.subcontracted_quantity - service_item.qty)
+			)
 			doc.save()
 
 

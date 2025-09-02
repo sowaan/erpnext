@@ -1,8 +1,9 @@
 /* eslint-disable no-unused-vars */
 erpnext.PointOfSale.Payment = class {
-	constructor({ events, wrapper }) {
+	constructor({ events, settings, wrapper }) {
 		this.wrapper = wrapper;
 		this.events = events;
+		this.disable_grand_total_to_default_mop = settings.disable_grand_total_to_default_mop;
 
 		this.init_component();
 	}
@@ -340,19 +341,12 @@ erpnext.PointOfSale.Payment = class {
 		// pass
 	}
 
-	async render_payment_section() {
+	render_payment_section() {
+		this.remove_grand_total_from_default_mop();
 		this.render_payment_mode_dom();
 		this.make_invoice_fields_control();
 		this.update_totals_section();
-		let r = await frappe.db.get_value(
-			"POS Profile",
-			this.frm.doc.pos_profile,
-			"disable_grand_total_to_default_mop"
-		);
-
-		if (!r.message.disable_grand_total_to_default_mop) {
-			this.focus_on_default_mop();
-		}
+		this.focus_on_default_mop();
 	}
 
 	after_render() {
@@ -454,7 +448,19 @@ erpnext.PointOfSale.Payment = class {
 		this.attach_cash_shortcuts(doc);
 	}
 
+	remove_grand_total_from_default_mop() {
+		if (!this.disable_grand_total_to_default_mop) return;
+		const doc = this.events.get_frm().doc;
+		const payments = doc.payments;
+		payments.forEach((p) => {
+			if (p.default) {
+				frappe.model.set_value(p.doctype, p.name, "amount", 0);
+			}
+		});
+	}
+
 	focus_on_default_mop() {
+		if (this.disable_grand_total_to_default_mop) return;
 		const doc = this.events.get_frm().doc;
 		const payments = doc.payments;
 		payments.forEach((p) => {

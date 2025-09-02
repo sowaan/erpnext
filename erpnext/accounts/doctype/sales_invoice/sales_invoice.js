@@ -782,24 +782,6 @@ frappe.ui.form.on("Sales Invoice", {
 			};
 		};
 	},
-	// When multiple companies are set up. in case company name is changed set default company address
-	company: function (frm) {
-		if (frm.doc.company) {
-			frappe.call({
-				method: "erpnext.setup.doctype.company.company.get_default_company_address",
-				args: { name: frm.doc.company, existing_address: frm.doc.company_address || "" },
-				debounce: 2000,
-				callback: function (r) {
-					if (r.message) {
-						frm.set_value("company_address", r.message);
-					} else {
-						frm.set_value("company_address", "");
-					}
-				},
-			});
-		}
-	},
-
 	onload: function (frm) {
 		frm.redemption_conversion_factor = null;
 	},
@@ -897,8 +879,16 @@ frappe.ui.form.on("Sales Invoice", {
 
 	project: function (frm) {
 		if (frm.doc.project) {
-			frm.events.add_timesheet_data(frm, {
-				project: frm.doc.project,
+			frappe.call({
+				method: "is_auto_fetch_timesheet_enabled",
+				doc: frm.doc,
+				callback: function (r) {
+					if (cint(r.message)) {
+						frm.events.add_timesheet_data(frm, {
+							project: frm.doc.project,
+						});
+					}
+				},
 			});
 		}
 	},
@@ -914,7 +904,23 @@ frappe.ui.form.on("Sales Invoice", {
 		}
 
 		const timesheets = await frm.events.get_timesheet_data(frm, kwargs);
+
+		if (kwargs.item_code) {
+			frm.events.add_timesheet_item(frm, kwargs.item_code, timesheets);
+		}
+
 		return frm.events.set_timesheet_data(frm, timesheets);
+	},
+
+	add_timesheet_item: function (frm, item_code, timesheets) {
+		const row = frm.add_child("items");
+		frappe.model.set_value(row.doctype, row.name, "item_code", item_code);
+		frappe.model.set_value(
+			row.doctype,
+			row.name,
+			"qty",
+			timesheets.reduce((a, b) => a + (b["billing_hours"] || 0.0), 0.0)
+		);
 	},
 
 	async get_timesheet_data(frm, kwargs) {
@@ -1015,6 +1021,22 @@ frappe.ui.form.on("Sales Invoice", {
 								reqd: 1,
 							},
 							{
+								label: __("Item Code"),
+								fieldname: "item_code",
+								fieldtype: "Link",
+								options: "Item",
+								get_query: () => {
+									return {
+										query: "erpnext.controllers.queries.item_query",
+										filters: {
+											is_sales_item: 1,
+											customer: frm.doc.customer,
+											has_variants: 0,
+										},
+									};
+								},
+							},
+							{
 								fieldtype: "Column Break",
 								fieldname: "col_break_1",
 							},
@@ -1038,6 +1060,7 @@ frappe.ui.form.on("Sales Invoice", {
 								from_time: data.from_time,
 								to_time: data.to_time,
 								project: data.project,
+								item_code: data.item_code,
 							});
 							d.hide();
 						},
@@ -1058,6 +1081,18 @@ frappe.ui.form.on("Sales Invoice", {
 frappe.ui.form.on("Sales Invoice Timesheet", {
 	timesheets_remove(frm) {
 		frm.trigger("calculate_timesheet_totals");
+	},
+});
+
+frappe.ui.form.on("Sales Invoice Payment", {
+	mode_of_payment: function (frm) {
+		frappe.call({
+			doc: frm.doc,
+			method: "set_account_for_mode_of_payment",
+			callback: function (r) {
+				refresh_field("payments");
+			},
+		});
 	},
 });
 

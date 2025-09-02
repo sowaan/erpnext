@@ -379,6 +379,7 @@
    "search_index": 1
   },
   {
+   "default": "Now",
    "fieldname": "posting_time",
    "fieldtype": "Time",
    "hide_days": 1,
@@ -2024,6 +2025,7 @@
    "fieldname": "amount_eligible_for_commission",
    "fieldtype": "Currency",
    "label": "Amount Eligible for Commission",
+   "options": "Company:company:default_currency",
    "read_only": 1
   },
   {
@@ -2177,6 +2179,7 @@
    "print_hide": 1
   }
  ],
+ "grid_page_length": 50,
  "icon": "fa fa-file-text",
  "idx": 181,
  "is_submittable": 1,
@@ -2187,7 +2190,7 @@
    "link_fieldname": "consolidated_invoice"
   }
  ],
- "modified": "2025-02-06 15:59:54.636202",
+ "modified": "2025-08-04 19:20:28.732039",
  "modified_by": "Administrator",
  "module": "Accounts",
  "name": "Sales Invoice",
@@ -2233,6 +2236,7 @@
   }
  ],
  "quick_entry": 1,
+ "row_format": "Dynamic",
  "search_fields": "posting_date, due_date, customer, base_grand_total, outstanding_amount",
  "show_name_in_global_search": 1,
  "sort_field": "modified",

@@ -258,6 +258,10 @@ frappe.ui.form.on("Payment Entry", {
 		frappe.flags.allocate_payment_amount = true;
 	},
 
+	validate: async function (frm) {
+		await frm.events.set_exchange_gain_loss_deduction(frm);
+	},
+
 	validate_company: (frm) => {
 		if (!frm.doc.company) {
 			frappe.throw({ message: __("Please select a Company first."), title: __("Mandatory") });
@@ -269,6 +273,7 @@ frappe.ui.form.on("Payment Entry", {
 		frm.events.hide_unhide_fields(frm);
 		frm.events.set_dynamic_labels(frm);
 		erpnext.accounts.dimensions.update_dimension(frm, frm.doctype);
+		erpnext.utils.set_letter_head(frm);
 	},
 
 	contact_person: function (frm) {
@@ -407,7 +412,7 @@ frappe.ui.form.on("Payment Entry", {
 						from_date: frm.doc.posting_date,
 						to_date: moment(frm.doc.modified).format("YYYY-MM-DD"),
 						company: frm.doc.company,
-						group_by: "",
+						categorize_by: "",
 						show_cancelled_entries: frm.doc.docstatus === 2,
 					};
 					frappe.set_route("query-report", "General Ledger");
@@ -1893,8 +1898,6 @@ function prompt_for_missing_account(frm, account) {
 			(values) => resolve(values?.[account]),
 			__("Please Specify Account")
 		);
-
-		dialog.on_hide = () => resolve("");
 	});
 }
 

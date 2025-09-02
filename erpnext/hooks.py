@@ -4,7 +4,7 @@ app_publisher = "Frappe Technologies Pvt. Ltd."
 app_description = """ERP made simple"""
 app_icon = "fa fa-th"
 app_color = "#e74c3c"
-app_email = "info@erpnext.com"
+app_email = "hello@frappe.io"
 app_license = "GNU General Public License (v3)"
 source_link = "https://github.com/frappe/erpnext"
 app_logo_url = "/assets/erpnext/images/favicon.png"
@@ -57,7 +57,6 @@ setup_wizard_complete = "erpnext.setup.setup_wizard.setup_wizard.setup_demo"
 setup_wizard_test = "erpnext.setup.setup_wizard.test_setup_wizard.run_setup_wizard_test"
 
 before_install = [
-	"erpnext.setup.install.check_setup_wizard_not_completed",
 	"erpnext.setup.install.check_frappe_version",
 ]
 after_install = "erpnext.setup.install.after_install"
@@ -484,8 +483,8 @@ email_brand_image = "assets/erpnext/images/favicon.png"
 default_mail_footer = """
 	<span>
 		Sent via
-		<a class="text-muted" href="https://sowaanerp.com?source=via_email_footer" target="_blank">
-			SowaanERP
+		<a class="text-muted" href="https://www.sowaanerp.com?source=via_email_footer" target="_blank">
+		  SowaanERP
 		</a>
 	</span>
 """

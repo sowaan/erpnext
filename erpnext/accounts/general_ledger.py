@@ -81,6 +81,10 @@ def make_acc_dimensions_offsetting_entry(gl_map):
 					"credit_in_account_currency": credit,
 					"remarks": _("Offsetting for Accounting Dimension") + f" - {dimension.name}",
 					"against_voucher": None,
+					"account_currency": dimension.account_currency,
+					# Party Type and Party are restricted to Receivable and Payable accounts
+					"party_type": None,
+					"party": None,
 				}
 			)
 			offsetting_entry["against_voucher_type"] = None
@@ -108,6 +112,9 @@ def get_accounting_dimensions_for_offsetting_entry(gl_map, company):
 	accounting_dimensions_to_offset = []
 	for acc_dimension in acc_dimensions:
 		values = set([entry.get(acc_dimension.fieldname) for entry in gl_map])
+		acc_dimension.account_currency = frappe.get_cached_value(
+			"Account", acc_dimension.offsetting_account, "account_currency"
+		)
 		if len(values) > 1:
 			accounting_dimensions_to_offset.append(acc_dimension)
 
@@ -179,6 +186,15 @@ def process_gl_map(gl_map, merge_entries=True, precision=None, from_repost=False
 
 
 def distribute_gl_based_on_cost_center_allocation(gl_map, precision=None, from_repost=False):
+	round_off_account, default_currency = frappe.get_cached_value(
+		"Company", gl_map[0].company, ["round_off_account", "default_currency"]
+	)
+	if not precision:
+		precision = get_field_precision(
+			frappe.get_meta("GL Entry").get_field("debit"),
+			currency=default_currency,
+		)
+
 	new_gl_map = []
 	for d in gl_map:
 		cost_center = d.get("cost_center")
@@ -193,6 +209,11 @@ def distribute_gl_based_on_cost_center_allocation(gl_map, precision=None, from_r
 			gl_map[0]["company"], gl_map[0]["posting_date"], cost_center
 		)
 		if not cost_center_allocation:
+			new_gl_map.append(d)
+			continue
+
+		if d.account == round_off_account:
+			d.cost_center = cost_center_allocation[0][0]
 			new_gl_map.append(d)
 			continue
 
@@ -298,6 +319,8 @@ def get_merge_properties(dimensions=None):
 		"project",
 		"finance_book",
 		"voucher_no",
+		"advance_voucher_type",
+		"advance_voucher_no",
 	]
 	if dimensions:
 		merge_properties.extend(dimensions)
@@ -430,7 +453,7 @@ def process_debit_credit_difference(gl_map):
 	voucher_no = gl_map[0].voucher_no
 	allowance = get_debit_credit_allowance(voucher_type, precision)
 
-	debit_credit_diff = get_debit_credit_difference(gl_map, precision)
+	debit_credit_diff, trx_cur_debit_credit_diff = get_debit_credit_difference(gl_map, precision)
 
 	if abs(debit_credit_diff) > allowance:
 		if not (
@@ -441,9 +464,9 @@ def process_debit_credit_difference(gl_map):
 			raise_debit_credit_not_equal_error(debit_credit_diff, voucher_type, voucher_no)
 
 	elif abs(debit_credit_diff) >= (1.0 / (10**precision)):
-		make_round_off_gle(gl_map, debit_credit_diff, precision)
+		make_round_off_gle(gl_map, debit_credit_diff, trx_cur_debit_credit_diff, precision)
 
-	debit_credit_diff = get_debit_credit_difference(gl_map, precision)
+	debit_credit_diff, trx_cur_debit_credit_diff = get_debit_credit_difference(gl_map, precision)
 	if abs(debit_credit_diff) > allowance:
 		if not (
 			voucher_type == "Journal Entry"
@@ -455,14 +478,23 @@ def process_debit_credit_difference(gl_map):
 
 def get_debit_credit_difference(gl_map, precision):
 	debit_credit_diff = 0.0
+	trx_cur_debit_credit_diff = 0
+
 	for entry in gl_map:
 		entry.debit = flt(entry.debit, precision)
 		entry.credit = flt(entry.credit, precision)
 		debit_credit_diff += entry.debit - entry.credit
 
-	debit_credit_diff = flt(debit_credit_diff, precision)
+		entry.debit_in_transaction_currency = flt(entry.debit_in_transaction_currency, precision)
+		entry.credit_in_transaction_currency = flt(entry.credit_in_transaction_currency, precision)
+		trx_cur_debit_credit_diff += (
+			entry.debit_in_transaction_currency - entry.credit_in_transaction_currency
+		)
 
-	return debit_credit_diff
+	debit_credit_diff = flt(debit_credit_diff, precision)
+	trx_cur_debit_credit_diff = flt(trx_cur_debit_credit_diff, precision)
+
+	return debit_credit_diff, trx_cur_debit_credit_diff
 
 
 def get_debit_credit_allowance(voucher_type, precision):
@@ -489,7 +521,7 @@ def has_opening_entries(gl_map: list) -> bool:
 	return False
 
 
-def make_round_off_gle(gl_map, debit_credit_diff, precision):
+def make_round_off_gle(gl_map, debit_credit_diff, trx_cur_debit_credit_diff, precision):
 	round_off_account, round_off_cost_center, round_off_for_opening = get_round_off_account_and_cost_center(
 		gl_map[0].company, gl_map[0].voucher_type, gl_map[0].voucher_no
 	)
@@ -534,6 +566,12 @@ def make_round_off_gle(gl_map, debit_credit_diff, precision):
 			"credit_in_account_currency": debit_credit_diff if debit_credit_diff > 0 else 0,
 			"debit": abs(debit_credit_diff) if debit_credit_diff < 0 else 0,
 			"credit": debit_credit_diff if debit_credit_diff > 0 else 0,
+			"debit_in_transaction_currency": abs(trx_cur_debit_credit_diff)
+			if trx_cur_debit_credit_diff < 0
+			else 0,
+			"credit_in_transaction_currency": trx_cur_debit_credit_diff
+			if trx_cur_debit_credit_diff > 0
+			else 0,
 			"cost_center": round_off_cost_center,
 			"party_type": None,
 			"party": None,
@@ -670,7 +708,18 @@ def make_reverse_gl_entries(
 				query.run()
 		else:
 			if not immutable_ledger_enabled:
-				set_as_cancel(gl_entries[0]["voucher_type"], gl_entries[0]["voucher_no"])
+				gle_names = [x.get("name") for x in gl_entries]
+
+				# if names are available, cancel only that set of entries
+				if not all(gle_names):
+					set_as_cancel(gl_entries[0]["voucher_type"], gl_entries[0]["voucher_no"])
+				else:
+					frappe.db.sql(
+						"""UPDATE `tabGL Entry` SET is_cancelled = 1,
+						modified=%s, modified_by=%s
+						where name in %s and is_cancelled = 0""",
+						(now(), frappe.session.user, tuple(gle_names)),
+					)
 
 		for entry in gl_entries:
 			new_gle = copy.deepcopy(entry)
