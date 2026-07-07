@@ -212,13 +212,15 @@ class TestProductionPlan(FrappeTestCase):
 		quantities = [d["quantity"] for d in mr_items]
 		rm_qty = sum(quantities)
 
-		# Only 2 MR item created - the first SO's requirement is fully covered by stock (v15 behaviour)
-		self.assertEqual(len(mr_items), 2)
-		self.assertEqual(rm_qty, 2, "Cascading failed: total MR qty should be 2 (3 needed - 1 in stock)")
+		# 3 MR items: SO1's requirement is covered by stock (qty=0 but reserved), SO2 and SO3 need 1 each
+		self.assertEqual(len(mr_items), 3)
+		self.assertEqual(
+			rm_qty, 2, "Cascading failed: total purchase qty should be 2 (3 needed - 1 in stock)"
+		)
 		self.assertEqual(
 			quantities,
-			[1, 1],
-			"Cascading failed: only second and third SO should need procurement (qty=1) since first SO consumed stock",
+			[0, 1, 1],
+			"SO1 stock-covered item should appear with qty=0 for reservation; SO2 and SO3 need qty=1",
 		)
 
 		sr.cancel()
@@ -251,11 +253,13 @@ class TestProductionPlan(FrappeTestCase):
 		pln = create_production_plan(
 			item_code="Test Production Item 1", use_multi_level_bom=0, ignore_existing_ordered_qty=0
 		)
-		self.assertFalse(len(pln.mr_items))
 
+		items_needing_purchase = [row.item_code for row in pln.mr_items if row.quantity > 0]
+		self.assertFalse(len(items_needing_purchase))
+
+		pln.cancel()
 		sr1.cancel()
 		sr2.cancel()
-		pln.cancel()
 
 	def test_production_plan_sales_orders(self):
 		"Test if previously fulfilled SO (with WO) is pulled into Prod Plan."
@@ -1254,8 +1258,10 @@ class TestProductionPlan(FrappeTestCase):
 		plan.get_sub_assembly_items()
 
 		mr_items = []
+		expected_main_item_by_mr_item = {"ChildPart1 For MR": "SubAssembly1-1 For MR"}
 		for row in plan.sub_assembly_items:
 			mr_items.append(row.production_item)
+			expected_main_item_by_mr_item[row.production_item] = row.parent_item_code
 			row.type_of_manufacturing = "Material Request"
 
 		plan.save()
@@ -1264,6 +1270,10 @@ class TestProductionPlan(FrappeTestCase):
 		validate_mr_items = [d.get("item_code") for d in items]
 		for item_code in mr_items:
 			self.assertTrue(item_code in validate_mr_items)
+
+		main_item_by_mr_item = {item.get("item_code"): item.get("main_item_code") for item in items}
+		for item_code, main_item_code in expected_main_item_by_mr_item.items():
+			self.assertEqual(main_item_by_mr_item[item_code], main_item_code)
 
 	def test_resered_qty_for_production_plan_for_material_requests(self):
 		from erpnext.stock.utils import get_or_make_bin

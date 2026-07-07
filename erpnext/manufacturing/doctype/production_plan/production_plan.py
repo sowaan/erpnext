@@ -9,6 +9,7 @@ from collections import defaultdict
 import frappe
 from frappe import _, msgprint
 from frappe.model.document import Document
+from frappe.query_builder import Case
 from frappe.query_builder.functions import IfNull, Sum
 from frappe.utils import (
 	add_days,
@@ -1375,7 +1376,7 @@ def get_material_request_items(
 			get_conversion_factor(row.item_code, item_details.purchase_uom).get("conversion_factor") or 1.0
 		)
 
-	if required_qty > 0:
+	if flt(row.get("qty")) > 0:
 		return {
 			"item_code": row.item_code,
 			"item_name": row.item_name,
@@ -1397,7 +1398,7 @@ def get_material_request_items(
 			"sales_order": sales_order,
 			"description": row.get("description"),
 			"uom": row.get("purchase_uom") or row.get("stock_uom"),
-			"main_bom_item": row.get("main_bom_item"),
+			"main_item_code": row.get("main_bom_item"),
 		}
 
 
@@ -1557,6 +1558,8 @@ def get_items_for_material_requests(doc, warehouses=None, get_parent_warehouse_d
 							"item_code": sa_row.production_item,
 							"required_qty": sa_row.qty,
 							"include_exploded_items": 0,
+							"sales_order": sa_row.sales_order,
+							"main_bom_item": sa_row.parent_item_code,
 						}
 					)
 				)
@@ -1660,6 +1663,7 @@ def get_items_for_material_requests(doc, warehouses=None, get_parent_warehouse_d
 					"stock_uom": item_master.stock_uom,
 					"conversion_factor": conversion_factor,
 					"safety_stock": item_master.safety_stock,
+					"main_bom_item": data.get("main_bom_item"),
 				}
 			)
 
@@ -1877,7 +1881,12 @@ def get_reserved_qty_for_production_plan(item_code, warehouse):
 		frappe.qb.from_(table)
 		.inner_join(child)
 		.on(table.name == child.parent)
-		.select(Sum(child.quantity * child.conversion_factor))
+		.select(
+			Sum(
+				(Case().when(child.quantity == 0, child.required_bom_qty).else_(child.quantity))
+				* child.conversion_factor
+			)
+		)
 		.where(
 			(table.docstatus == 1)
 			& (child.item_code == item_code)

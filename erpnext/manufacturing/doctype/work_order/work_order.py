@@ -158,7 +158,7 @@ class WorkOrder(Document):
 		self.calculate_operating_cost()
 		self.validate_qty()
 		self.validate_transfer_against()
-		self.validate_operation_time()
+		self.validate_operations()
 		self.status = self.get_status()
 		self.validate_workstation_type()
 		self.reset_use_multi_level_bom()
@@ -406,7 +406,7 @@ class WorkOrder(Document):
 		elif self.docstatus == 1:
 			if status not in ["Closed", "Stopped"]:
 				status = "Not Started"
-				if flt(self.material_transferred_for_manufacturing) > 0:
+				if flt(self.material_transferred_for_manufacturing) > 0 or self.skip_transfer:
 					status = "In Process"
 
 				precision = frappe.get_precision("Work Order", "produced_qty")
@@ -1120,9 +1120,12 @@ class WorkOrder(Document):
 				title=_("Missing value"),
 			)
 
-	def validate_operation_time(self):
+	def validate_operations(self):
 		for d in self.operations:
-			if not d.time_in_mins > 0:
+			if not d.batch_size or d.batch_size <= 0:
+				d.batch_size = 1
+
+			if d.time_in_mins <= 0:
 				frappe.throw(_("Operation Time must be greater than 0 for Operation {0}").format(d.operation))
 
 	def update_required_items(self):
@@ -1237,6 +1240,36 @@ class WorkOrder(Document):
 			row.db_set(
 				"transferred_qty", (transferred_items.get(row.item_code) or 0.0), update_modified=False
 			)
+
+		self.recompute_material_transferred_for_manufacturing(transferred_items)
+
+	def recompute_material_transferred_for_manufacturing(self, transferred_items):
+		"""Set material_transferred_for_manufacturing based on actual item-level transfers, not fg_completed_qty."""
+		# When fg_completed_qty > 0 (direct stock entries, excess transfer), preserve the
+		# SUM(fg_completed_qty) approach so excess-transfer tracking works correctly.
+		sum_fg_completed_qty = self.get_transferred_or_manufactured_qty("Material Transfer for Manufacture")
+		if sum_fg_completed_qty:
+			self.db_set("material_transferred_for_manufacturing", sum_fg_completed_qty)
+			return
+
+		# Pick list flow sets fg_completed_qty=0; use min-fraction of actual item transfers
+		# so partial availability does not prematurely mark the work order as fully transferred.
+		required_by_item = {}
+		for row in self.required_items:
+			if not row.include_item_in_manufacturing or flt(row.required_qty) <= 0:
+				continue
+			required_by_item[row.item_code] = required_by_item.get(row.item_code, 0.0) + flt(row.required_qty)
+
+		if not required_by_item:
+			return
+
+		min_fraction = min(
+			flt(transferred_items.get(item_code) or 0) / required_qty
+			for item_code, required_qty in required_by_item.items()
+		)
+		min_fraction = min(min_fraction, 1.0)
+		material_transferred = min_fraction * flt(self.qty)
+		self.db_set("material_transferred_for_manufacturing", material_transferred)
 
 	def update_returned_qty(self):
 		ste = frappe.qb.DocType("Stock Entry")

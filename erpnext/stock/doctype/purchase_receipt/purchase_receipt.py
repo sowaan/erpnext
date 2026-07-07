@@ -493,6 +493,7 @@ class PurchaseReceipt(BuyingController):
 				remarks=remarks,
 				against_account=stock_asset_rbnb,
 				account_currency=account_currency,
+				project=item.project,
 				item=item,
 			)
 
@@ -535,6 +536,7 @@ class PurchaseReceipt(BuyingController):
 					against_account=stock_asset_account_name,
 					debit_in_account_currency=-1 * flt(outgoing_amount, item.precision("base_net_amount")),
 					account_currency=account_currency,
+					project=item.project,
 					item=item,
 				)
 
@@ -559,6 +561,7 @@ class PurchaseReceipt(BuyingController):
 							against_account=self.supplier,
 							debit_in_account_currency=-1 * discrepancy_caused_by_exchange_rate_difference,
 							account_currency=account_currency,
+							project=item.project,
 							item=item,
 						)
 
@@ -572,6 +575,7 @@ class PurchaseReceipt(BuyingController):
 							against_account=self.supplier,
 							debit_in_account_currency=-1 * discrepancy_caused_by_exchange_rate_difference,
 							account_currency=account_currency,
+							project=item.project,
 							item=item,
 						)
 
@@ -634,6 +638,7 @@ class PurchaseReceipt(BuyingController):
 					remarks=remarks,
 					against_account=stock_asset_account_name,
 					account_currency=supplier_warehouse_account_currency,
+					project=item.project,
 					item=item,
 				)
 
@@ -1250,7 +1255,7 @@ def get_billed_qty_amount_against_purchase_receipt(pr_doc):
 		.on(parent_table.name == table.parent)
 		.select(
 			table.pr_detail,
-			fn.Sum(table.amount * parent_table.conversion_rate).as_("amount"),
+			fn.Sum(table.base_net_amount).as_("amount"),
 			fn.Sum(table.qty).as_("qty"),
 		)
 		.where((table.pr_detail.isin(pr_names)) & (table.docstatus == 1))
@@ -1296,7 +1301,7 @@ def get_billed_qty_amount_against_purchase_order(pr_doc):
 			.select(
 				table.po_detail,
 				fn.Sum(table.qty).as_("qty"),
-				fn.Sum(table.amount * parent_table.conversion_rate).as_("amount"),
+				fn.Sum(table.base_net_amount).as_("amount"),
 			)
 			.where((table.po_detail.isin(po_names)) & (table.docstatus == 1) & (table.pr_detail.isnull()))
 			.groupby(table.po_detail)
